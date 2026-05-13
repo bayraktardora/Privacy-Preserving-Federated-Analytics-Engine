@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  server:
+    build: ./server
+    container_name: server
+    networks:
+      - federated-network
+    ports:
+      - "5000:5000"
+
+  client1:
+    build: ./client
+    container_name: client1
+    networks:
+      - federated-network
+
+  client2:
+    build: ./client
+    container_name: client2
+    networks:
+      - federated-network
+
+  client3:
+    build: ./client
+    container_name: client3
+    networks:
+      - federated-network
+
+  dashboard:
+    build: ./dashboards
+    container_name: dashboard
+    networks:
+      - federated-network
+    ports:
+      - "8080:8080"
+
+networks:
+  federated-network:
+    driver: bridge
