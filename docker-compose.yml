@@ -12,28 +12,59 @@ services:
   client1:
     build: ./client
     container_name: client1
+    environment:
+      - NODE_ID=client1
+      - SERVER_URL=http://server:5000
+      - EPSILON=0.1
+      - PRIVACY_STRATEGY=laplace
+    volumes:
+      - ./client/data_client1.csv:/app/data.csv
     networks:
       - federated-network
+    depends_on:
+      - server
 
   client2:
     build: ./client
     container_name: client2
+    environment:
+      - NODE_ID=client2
+      - SERVER_URL=http://server:5000
+      - EPSILON=0.5
+      - PRIVACY_STRATEGY=laplace
+    volumes:
+      - ./client/data_client2.csv:/app/data.csv
     networks:
       - federated-network
+    depends_on:
+      - server
 
   client3:
     build: ./client
     container_name: client3
+    environment:
+      - NODE_ID=client3
+      - SERVER_URL=http://server:5000
+      - EPSILON=1.0
+      - PRIVACY_STRATEGY=gaussian
+    volumes:
+      - ./client/data_client3.csv:/app/data.csv
     networks:
       - federated-network
+    depends_on:
+      - server
 
   dashboard:
     build: ./dashboards
     container_name: dashboard
+    environment:
+      - SERVER_URL=http://server:5000
     networks:
       - federated-network
     ports:
       - "8080:8080"
+    depends_on:
+      - server
 
 networks:
   federated-network:
