@@ -2,10 +2,11 @@ import numpy as np
 from abc import ABC, abstractmethod
 
 
-class PrivacyStrategy(ABC):
+class IPrivacyMechanism(ABC):
     """
-    Abstract base class for differential privacy strategies.
-    All strategies must implement the apply() method.
+    Abstract base class for differential privacy mechanisms.
+    All mechanisms must implement the vectorized apply_noise() method.
+    "I" prefix symbolizes that this class isn't used directly, implementations inherit it.
     """
 
     def __init__(self, epsilon: float):
@@ -14,56 +15,46 @@ class PrivacyStrategy(ABC):
         self.epsilon = epsilon
 
     @abstractmethod
-    def apply(self, value: float, sensitivity: float = 1.0) -> float:
-        """Apply noise to a value to achieve differential privacy."""
+    def apply_noise(self, data: np.ndarray, sensitivity: float = 1.0) -> np.ndarray:
+        """
+        Apply noise to an entire NumPy array to achieve differential privacy efficiently.
+        
+        Args:
+            data: NumPy array of true numeric values to protect.
+            sensitivity: Sensitivity of the query.
+            
+        Returns:
+            A NumPy array containing the noisy values.
+        """
         pass
 
     def __repr__(self):
         return f"{self.__class__.__name__}(epsilon={self.epsilon})"
 
 
-class LaplaceStrategy(PrivacyStrategy):
+class LaplaceStrategy(IPrivacyMechanism):
     """
     Laplace Mechanism for differential privacy.
-
     Adds Laplace-distributed noise scaled to sensitivity / epsilon.
-    Best for numerical queries (counts, sums, averages).
-
+    Optimized to handle entire NumPy arrays natively.
     Privacy guarantee: epsilon-DP
     """
 
     def __init__(self, epsilon: float):
         super().__init__(epsilon)
 
-    def apply(self, value: float, sensitivity: float = 1.0) -> float:
-        """
-        Add Laplace noise to value.
-
-        Args:
-            value: The true numeric value to protect.
-            sensitivity: L1 sensitivity of the query (default 1.0).
-
-        Returns:
-            Noisy value with epsilon-DP guarantee.
-        """
+    def apply_noise(self, data: np.ndarray, sensitivity: float = 1.0) -> np.ndarray:
         scale = sensitivity / self.epsilon
-        noise = np.random.laplace(loc=0.0, scale=scale)
-        return value + noise
-
-    def apply_batch(self, values: list[float], sensitivity: float = 1.0) -> list[float]:
-        """Apply Laplace noise to a list of values."""
-        return [self.apply(v, sensitivity) for v in values]
+        # Vectorized noise generation matching the shape of incoming data
+        noise = np.random.laplace(loc=0.0, scale=scale, size=data.shape)
+        return data + noise
 
 
-class GaussianStrategy(PrivacyStrategy):
+class GaussianStrategy(IPrivacyMechanism):
     """
     Gaussian Mechanism for differential privacy.
-
     Adds Gaussian-distributed noise scaled to sensitivity / epsilon.
-    Provides (epsilon, delta)-DP — slightly weaker but often more
-    practical for machine learning workloads.
-
-    Privacy guarantee: (epsilon, delta)-DP
+    Provides (epsilon, delta)-DP guarantee.
     """
 
     def __init__(self, epsilon: float, delta: float = 1e-5):
@@ -73,47 +64,30 @@ class GaussianStrategy(PrivacyStrategy):
         self.delta = delta
 
     def _compute_sigma(self, sensitivity: float) -> float:
-        """
-        Compute Gaussian noise standard deviation using the analytic formula.
-        sigma = sensitivity * sqrt(2 * ln(1.25 / delta)) / epsilon
-        """
-        sigma = sensitivity * (np.sqrt(2 * np.log(1.25 / self.delta)) / self.epsilon)
-        return sigma
+        """sigma = sensitivity * sqrt(2 * ln(1.25 / delta)) / epsilon"""
+        return sensitivity * (np.sqrt(2 * np.log(1.25 / self.delta)) / self.epsilon)
 
-    def apply(self, value: float, sensitivity: float = 1.0) -> float:
-        """
-        Add Gaussian noise to value.
-
-        Args:
-            value: The true numeric value to protect.
-            sensitivity: L2 sensitivity of the query (default 1.0).
-
-        Returns:
-            Noisy value with (epsilon, delta)-DP guarantee.
-        """
+    def apply_noise(self, data: np.ndarray, sensitivity: float = 1.0) -> np.ndarray:
         sigma = self._compute_sigma(sensitivity)
-        noise = np.random.normal(loc=0.0, scale=sigma)
-        return value + noise
-
-    def apply_batch(self, values: list[float], sensitivity: float = 1.0) -> list[float]:
-        """Apply Gaussian noise to a list of values."""
-        return [self.apply(v, sensitivity) for v in values]
+        # Vectorized noise generation matching the shape of incoming data
+        noise = np.random.normal(loc=0.0, scale=sigma, size=data.shape)
+        return data + noise
 
     def __repr__(self):
         return f"GaussianStrategy(epsilon={self.epsilon}, delta={self.delta})"
 
 
-class PrivacyStrategyFactory:
+class PrivacyMechanismFactory:
     """
-    Factory to create the appropriate privacy strategy by name.
+    Factory to create the appropriate privacy mechanism by name.
 
     Usage:
-        strategy = PrivacyStrategyFactory.create("laplace", epsilon=0.5)
-        noisy_value = strategy.apply(42.0)
+        mechanism = PrivacyMechanismFactory.create("laplace", epsilon=0.5)
+        noisy_data = mechanism.apply_noise(np.array([10.0, 20.0, 30.0]))
     """
 
     @staticmethod
-    def create(strategy_name: str, epsilon: float, **kwargs) -> PrivacyStrategy:
+    def create(strategy_name: str, epsilon: float, **kwargs) -> IPrivacyMechanism:
         strategies = {
             "laplace": LaplaceStrategy,
             "gaussian": GaussianStrategy,
