@@ -71,6 +71,9 @@ with col2:
         st.error(health["error"])
     else:
         st.metric("Current Round", health.get("round", 0))
+        next_in = health.get("next_aggregation_in")
+        if next_in is not None:
+            st.metric("Next auto-aggregation", f"{int(next_in)}s")
         st.success("Server is online")
 
 st.divider()
@@ -102,6 +105,28 @@ else:
                     delta_color="inverse",
                 )
                 st.progress(pct)
+
+st.divider()
+
+# ── Row 2.5: Data Variability per Node ───────────────────────────────────────
+st.subheader("📊 Data Variability per Node")
+st.caption("Noisy standard deviation per node — higher = more spread-out data")
+
+if server_unreachable(results):
+    st.error(results["error"])
+else:
+    subs = results.get("submissions", {})
+    if not subs:
+        st.info("No submissions yet.")
+    else:
+        std_cols = st.columns(len(subs))
+        for i, (node_id, payload) in enumerate(subs.items()):
+            std_val = payload.get("noisy_std")
+            with std_cols[i]:
+                if std_val is None:
+                    st.metric(label=f"σ {node_id}", value="n/a")
+                else:
+                    st.metric(label=f"σ {node_id}", value=f"{std_val:.2f}")
 
 st.divider()
 

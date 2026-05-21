@@ -4,10 +4,13 @@ services:
   server:
     build: ./server
     container_name: server
+    environment:
+      - AGGREGATE_INTERVAL=15
     networks:
       - federated-network
     ports:
       - "5000:5000"
+    
 
   client1:
     build: ./client

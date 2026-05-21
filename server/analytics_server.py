@@ -71,8 +71,11 @@ class FedAvgAggregator(IAggregator):
 
         for node_id, payload in summaries.items():
             data_size  = payload.get("data_size", 1)
-            # prefer the real noisy mean; fall back to epsilon proxy
-            value      = payload.get("noisy_mean") or payload.get("epsilon", 0.0)
+            # prefer the real noisy mean; fall back to epsilon ONLY when
+            # noisy_mean is genuinely absent. A valid 0.0 must NOT trigger
+            # the fallback (issue #10).
+            nm    = payload.get("noisy_mean")
+            value = nm if nm is not None else payload.get("epsilon", 0.0)
             weighted_sum  += value * data_size
             total_weight  += data_size
 
@@ -98,7 +101,8 @@ class WeightedMeanAggregator(IAggregator):
             return {"error": "No active submissions"}
 
         values = [
-            p.get("noisy_mean") or p.get("epsilon", 0.0)
+            (p["noisy_mean"] if p.get("noisy_mean") is not None
+             else p.get("epsilon", 0.0))
             for p in summaries.values()
         ]
         aggregated = sum(values) / len(values)

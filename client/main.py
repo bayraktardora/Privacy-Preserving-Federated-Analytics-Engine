@@ -115,6 +115,7 @@ class PayloadSerializer:
             "epsilon":    self.epsilon,
             "data_size":  features["count"],
             "noisy_mean": round(features["mean"], 6),   # <-- used for FedAvg
+            "noisy_std":  round(features["std"], 6), 
         }
         print(f"[{NODE_ID}] Payload: {json.dumps(payload)}")
         return payload

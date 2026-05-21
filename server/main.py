@@ -1,19 +1,60 @@
+import asyncio
+import time
+import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from models import NodeRegistration, PrivacySummary, GlobalResult
 from node_registry import NodeRegistry
 from analytics_server import AnalyticsServer
 import uvicorn
-import os
+
+# ── Singletons ────────────────────────────────────────────────────────────────
+server   = AnalyticsServer()
+registry = NodeRegistry()
+
+# ── Scheduler config ──────────────────────────────────────────────────────────
+AGGREGATE_INTERVAL = int(os.getenv("AGGREGATE_INTERVAL", "15"))   # seconds
+_next_aggregate_ts = None   # unix ts of the next scheduled run (for dashboard countdown)
+
+
+async def _aggregation_loop():
+    """
+    Background task: every AGGREGATE_INTERVAL seconds, run FedAvg —
+    but only if at least one ALIVE node has submitted (avoid empty rounds).
+    """
+    global _next_aggregate_ts
+    while True:
+        _next_aggregate_ts = time.time() + AGGREGATE_INTERVAL
+        await asyncio.sleep(AGGREGATE_INTERVAL)
+        try:
+            alive = server.monitor.alive_nodes(registry)
+            has_alive_submission = any(nid in registry.submissions for nid in alive)
+            if has_alive_submission:
+                # federated_average does blocking file I/O → run off the event loop
+                result = await asyncio.to_thread(server.federated_average, registry)
+                print(f"[scheduler] auto round {result.get('round')} → {result.get('aggregated_value')}")
+            else:
+                print("[scheduler] skipped — no alive node has submitted")
+        except Exception as e:
+            print(f"[scheduler] error: {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(_aggregation_loop())
+    print(f"[scheduler] auto-aggregation enabled every {AGGREGATE_INTERVAL}s")
+    yield
+    task.cancel()
+
 
 app = FastAPI(
     title="Privacy-Preserving Federated Analytics Engine",
     description="Distributed analytics with differential privacy",
-    version="0.3.0",
+    version="0.4.0",
+    lifespan=lifespan,
 )
-
-server   = AnalyticsServer()
-registry = NodeRegistry()
 
 
 @app.post("/nodes/register")
@@ -33,7 +74,7 @@ def heartbeat(node_id: str):
 
 @app.post("/nodes/submit")
 def submit(node_id: str, payload: PrivacySummary):
-    result = registry.submit(node_id, payload.dict())
+    result = registry.submit(node_id, payload.model_dump())
     if result.get("status") == "error":
         raise HTTPException(status_code=404, detail=result["message"])
     return result
@@ -46,6 +87,7 @@ def get_results():
 
 @app.post("/aggregate")
 def aggregate():
+    """Manual trigger — kept for testing alongside the auto-scheduler."""
     result = server.federated_average(registry)
     return result
 
@@ -62,7 +104,15 @@ def node_status():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "round": server.round}
+    next_in = None
+    if _next_aggregate_ts is not None:
+        next_in = max(0.0, _next_aggregate_ts - time.time())
+    return {
+        "status":              "ok",
+        "round":               server.round,
+        "aggregate_interval":  AGGREGATE_INTERVAL,
+        "next_aggregation_in": round(next_in, 1) if next_in is not None else None,
+    }
 
 
 @app.get("/reports")

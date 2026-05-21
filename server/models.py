@@ -20,3 +20,10 @@ class GlobalResult(BaseModel):
     aggregated_value: float
     participating_nodes: list[str]
     total_data_points: int
+
+class PrivacySummary(BaseModel):
+    node_id: str
+    epsilon: float
+    data_size: int
+    noisy_mean: Optional[float] = None   # <-- added for FedAvg
+    noisy_std: Optional[float] = None    # <-- per-node variability indicator
